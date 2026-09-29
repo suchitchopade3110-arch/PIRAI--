@@ -14,6 +14,7 @@ from safety.attack_detection import detect_attack, detect_multi_turn
 from safety.output_security import scan_output
 from safety.taxonomy import SecuritySource
 from safety.tool_policy import authorize_tool_request
+from safety.explainability import attach_explanation
 
 _coder_tokenizer = None
 _coder_model = None
@@ -126,13 +127,15 @@ def safe_coding_agent(
     trace = []
 
     if not prompt or not str(prompt).strip():
-        return {
+        return attach_explanation({
             "status": "BLOCKED",
             "stage": "INPUT",
             "reason": {"reason": "Empty prompt provided"},
             "model_invoked": False,
             "trace": [{"stage": "INPUT", "status": "FAIL"}],
-        }
+        }, detected_by="SYSTEM_POLICY", policy_basis="Input validation policy",
+           why="The request did not contain any input to process.",
+           recommended_action="Provide a non-empty coding request and retry.")
 
     jailbreak = detect_multi_turn(prompt, history)
 
@@ -151,13 +154,14 @@ def safe_coding_agent(
             risk_level=jailbreak.get("risk_level"),
             confidence=jailbreak.get("confidence"),
         )
-        return {
+        return attach_explanation({
             "status": "BLOCKED",
             "stage": "JAILBREAK",
             "reason": jailbreak,
             "model_invoked": False,
             "trace": trace,
-        }
+        }, detected_by="DETERMINISTIC_ATTACK_DETECTOR", finding=jailbreak,
+           policy_basis="Prompt injection policy")
     trace.append({"stage": "JAILBREAK_DETECTION", "status": "PASS"})
 
     context_ignored = False
@@ -207,22 +211,24 @@ def safe_coding_agent(
     )
 
     if input_result["decision"] == "BLOCK":
-        return {
+        return attach_explanation({
             "status": "BLOCKED",
             "stage": "INPUT",
             "reason": input_result,
             "model_invoked": False,
             "trace": trace,
-        }
+        }, detected_by="INPUT_MODERATION_CLASSIFIER", finding=input_result,
+           policy_basis="Safety score threshold policy", source=SecuritySource.USER_INPUT.value)
 
     if input_result["decision"] == "REVIEW":
-        return {
+        return attach_explanation({
             "status": "HUMAN_REVIEW",
             "stage": "INPUT",
             "reason": input_result,
             "model_invoked": False,
             "trace": trace,
-        }
+        }, detected_by="HUMAN_REVIEW_POLICY", finding=input_result,
+           policy_basis="Safety score threshold policy", source=SecuritySource.USER_INPUT.value)
 
     tool_result = authorize_tool_request(tool_request, trusted_permissions)
     if tool_request:
@@ -240,7 +246,7 @@ def safe_coding_agent(
             risk_level=tool_result.get("risk_level"),
         )
         if tool_result["decision"] != "ALLOW":
-            return {
+            return attach_explanation({
                 "status": "BLOCKED",
                 "stage": "TOOL_POLICY",
                 "reason": tool_result,
@@ -248,7 +254,8 @@ def safe_coding_agent(
                 "tool_invoked": False,
                 "context_ignored": context_ignored,
                 "trace": trace,
-            }
+            }, detected_by="TOOL_AUTHORIZATION_POLICY", finding=tool_result,
+               policy_basis="Trusted tool authorization policy")
         if tool_execute_fn:
             tool_execute_fn(tool_request)
             tool_result["tool_invoked"] = True
@@ -260,13 +267,15 @@ def safe_coding_agent(
         trace.append({"stage": "QWEN_GENERATION", "status": "RUN"})
         response = generate_fn(prompt)
     except Exception as e:
-        return {
+        trace[-1]["status"] = "ERROR"
+        return attach_explanation({
             "status": "ERROR",
             "stage": "GENERATION",
             "reason": {"error": str(e)},
             "model_invoked": True,
+            "tool_invoked": tool_result.get("tool_invoked", False),
             "trace": trace,
-        }
+        }, detected_by="SYSTEM_POLICY", policy_basis="Model execution policy")
 
     # =========================
     # 4. OUTPUT SAFETY
@@ -290,22 +299,26 @@ def safe_coding_agent(
     )
 
     if output_result["decision"] == "BLOCK":
-        return {
+        return attach_explanation({
             "status": "BLOCKED",
             "stage": "OUTPUT",
             "reason": output_result,
             "model_invoked": True,
+            "tool_invoked": tool_result.get("tool_invoked", False),
             "trace": trace,
-        }
+        }, detected_by="OUTPUT_MODERATION_CLASSIFIER", finding=output_result,
+           policy_basis="Safety score threshold policy", source=SecuritySource.MODEL_OUTPUT.value)
 
     if output_result["decision"] == "REVIEW":
-        return {
+        return attach_explanation({
             "status": "HUMAN_REVIEW",
             "stage": "OUTPUT",
             "reason": output_result,
             "model_invoked": True,
+            "tool_invoked": tool_result.get("tool_invoked", False),
             "trace": trace,
-        }
+        }, detected_by="HUMAN_REVIEW_POLICY", finding=output_result,
+           policy_basis="Safety score threshold policy", source=SecuritySource.MODEL_OUTPUT.value)
 
     secret_result = scan_output(response)
     trace.append({"stage": "SENSITIVE_DATA_SCAN", "status": secret_result["decision"]})
@@ -322,7 +335,7 @@ def safe_coding_agent(
             source=secret_result["source"],
             risk_level=secret_result["risk_level"],
         )
-        return {
+        return attach_explanation({
             "status": "BLOCKED" if secret_result["decision"] == "BLOCK" else "REDACTED",
             "stage": "OUTPUT_SECURITY",
             "reason": secret_result,
@@ -331,12 +344,13 @@ def safe_coding_agent(
             "tool_invoked": tool_result.get("tool_invoked", False),
             "context_ignored": context_ignored,
             "trace": trace,
-        }
+        }, detected_by="OUTPUT_SECURITY_SCANNER", finding=secret_result,
+           policy_basis="Sensitive-output policy")
 
     # =========================
     # 5. FINAL RESPONSE
     # =========================
-    return {
+    final_result = {
         "status": "ALLOWED",
         "response": response,
         "model_invoked": True,
@@ -344,3 +358,16 @@ def safe_coding_agent(
         "context_ignored": context_ignored,
         "trace": trace,
     }
+    if context_ignored:
+        return attach_explanation(
+            final_result,
+            detected_by="CONTEXT_ANALYSIS",
+            finding=context_result,
+            decision="IGNORE",
+            policy_basis="Untrusted context isolation policy",
+        )
+    return attach_explanation(
+        final_result,
+        detected_by="SYSTEM_POLICY",
+        policy_basis="PIRAI security policy",
+    )
