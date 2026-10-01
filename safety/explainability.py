@@ -10,6 +10,7 @@ import secrets
 from typing import Any, Dict, Iterable, Mapping, Optional
 
 from config import BLOCK_THRESHOLD, REVIEW_THRESHOLD, ZERO_TOLERANCE, ZERO_TOLERANCE_THRESHOLD
+from governance.policy_registry import get_active_policy
 
 
 RISK_TEMPLATES = {
@@ -154,6 +155,9 @@ def build_explanation(
     trace: Optional[Iterable[Mapping[str, Any]]] = None,
     why: Optional[str] = None,
     recommended_action: Optional[str] = None,
+    event_id: Optional[str] = None,
+    review_id: Optional[str] = None,
+    governance_status: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Build a public explanation from structured, non-sensitive metadata."""
     decision = str(_value(decision)).upper()
@@ -178,8 +182,10 @@ def build_explanation(
         "ERROR": "Retry the request; contact an operator if generation continues to fail.",
     }.get(decision, "Review the recorded decision before continuing.")
 
+    policy = get_active_policy()
     return {
         "explanation_id": _explanation_id(),
+        "event_id": event_id,
         "decision": decision,
         "risk_category": category,
         "risk_level": _value(risk_level) or {
@@ -193,6 +199,10 @@ def build_explanation(
         "threshold": _threshold(decision, category, score),
         "why": safe_why,
         "policy_basis": policy_basis or "PIRAI security policy",
+        "policy_version": policy.policy_version,
+        "review_required": decision == "REVIEW",
+        "review_id": review_id,
+        "governance_status": governance_status or ("PENDING" if decision == "REVIEW" else "NOT_REQUIRED"),
         "execution": {"model_invoked": bool(model_invoked), "tool_invoked": bool(tool_invoked)},
         "recommended_action": action,
         "trace": explain_trace(trace),
@@ -236,5 +246,8 @@ def attach_explanation(
         trace=response.get("trace"),
         why=why,
         recommended_action=recommended_action,
+        event_id=response.get("event_id"),
+        review_id=response.get("review_id"),
+        governance_status=response.get("governance_status"),
     )
     return response

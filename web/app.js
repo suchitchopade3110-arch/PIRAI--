@@ -2,7 +2,8 @@ const icons = {
   overview: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
   demo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 17l6-6 4 4 6-8"/><path d="M15 7h5v5"/></svg>',
   eval: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 19V9M10 19V5M16 19v-7M22 19V3"/></svg>',
-  logs: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 4h14v16H5z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>'
+  logs: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 4h14v16H5z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>',
+  governance: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3l8 4v5c0 5-3.4 8-8 9-4.6-1-8-4-8-9V7z"/><path d="M8 12l2.5 2.5L16 9"/></svg>'
 };
 
 const state = { page: 'demo', data: null, selectedCase: null, prompt: '', result: null, running: false, error: '', selectedEvent: null };
@@ -19,7 +20,7 @@ function badge(value) {
 }
 
 function shell(content) {
-  const names = {overview:'Overview', demo:'Security Demo', evaluations:'Evaluations', logs:'Audit Logs'};
+  const names = {overview:'Overview', demo:'Security Demo', evaluations:'Evaluations', governance:'Governance', logs:'Audit Logs'};
   return `<div class="shell">
     <aside class="rail">
       <div class="brand"><div class="brand-mark">RAI</div><div class="brand-copy"><div class="brand-name">RAI Security</div><div class="brand-meta">Risk assessment</div></div></div>
@@ -103,12 +104,22 @@ function logsPage() {
   const selected = state.selectedEvent || events[0];
   return `<div class="page-head"><div><h1>Audit Logs</h1><p>Privacy-preserving security events from local execution.</p></div></div>
     <div class="panel table-wrap">${events.length ? `<table><thead><tr><th>Time</th><th>Test case</th><th>Category</th><th>Source</th><th>Stage</th><th>Decision</th><th>Risk</th><th>Model</th><th>Tool</th></tr></thead><tbody>${events.map((event,index) => `<tr data-event="${index}" class="${selected === event ? 'selected' : ''}"><td>${esc(new Date(event.timestamp).toLocaleTimeString())}</td><td>${esc(event.prompt_id || 'Not available')}</td><td>${esc(event.category || 'Not available')}</td><td>${esc(event.source || 'Not available')}</td><td>${esc(title(event.stage))}</td><td>${badge(event.decision)}</td><td>${esc(event.risk_level || valueOr(event.score))}</td><td>${esc(boolText(event.model_invoked))}</td><td>${esc(boolText(event.tool_invoked))}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No audit events are available.</div>'}</div>
-    ${selected ? `<section class="panel detail"><h2>Event detail</h2><div class="detail-grid">${[['Event ID',`${selected.timestamp}:${selected.prompt_id || 'event'}`],['Timestamp',new Date(selected.timestamp).toLocaleString()],['Demo case',selected.prompt_id],['Source',selected.source],['Category',selected.category],['Detection stage',title(selected.stage)],['Risk level',selected.risk_level || valueOr(selected.score)],['Confidence',valueOr(selected.confidence)],['Decision',selected.decision],['Model invoked',boolText(selected.model_invoked)],['Tool invoked',boolText(selected.tool_invoked)]].map(item => `<div><span>${item[0]}</span><strong>${esc(item[1])}</strong></div>`).join('')}</div></section>` : ''}`;
+    ${selected ? `<section class="panel detail"><h2>Event detail</h2><div class="detail-grid">${[['Event ID',selected.event_id],['Timestamp',new Date(selected.timestamp).toLocaleString()],['Policy version',selected.policy_version],['Demo case',selected.prompt_id],['Source',selected.source],['Category',selected.category],['Detection stage',title(selected.stage)],['Risk level',selected.risk_level || valueOr(selected.score)],['Confidence',valueOr(selected.confidence)],['Decision',selected.decision],['Model invoked',boolText(selected.model_invoked)],['Tool invoked',boolText(selected.tool_invoked)]].map(item => `<div><span>${item[0]}</span><strong>${esc(item[1])}</strong></div>`).join('')}</div></section>` : ''}`;
+}
+
+function governancePage() {
+  const gov = state.data.governance;
+  const summary = gov.summary;
+  const decisions = gov.recent_reviews;
+  return `<div class="page-head"><div><h1>Accountability & Governance</h1><p>Policy-bound human review and immutable decision history.</p></div></div>
+    <div class="summary-grid">${[['Active policy',gov.policy.policy_version],['Pending reviews',summary.pending_reviews],['Approved',summary.approved_reviews],['Rejected',summary.rejected_reviews],['Overrides',summary.override_count]].map(item => `<div class="panel summary-block"><span>${esc(item[0])}</span><strong>${esc(item[1])}</strong></div>`).join('')}</div>
+    <section class="section"><div class="section-title"><h2>Policy provenance</h2><span>Current trusted application configuration</span></div><div class="panel detail"><div class="detail-grid">${[['Safety classifier',gov.policy.safety_classifier],['Coding model',gov.policy.coding_model],['Tool policy',gov.policy.tool_policy_version],['Review threshold',gov.policy.review_threshold],['Block threshold',gov.policy.block_threshold],['Zero-tolerance threshold',gov.policy.zero_tolerance_threshold],['Activated',gov.policy.activated_at],['Resolution rate',summary.reviewer_resolution_rate === null ? 'Insufficient data' : `${summary.reviewer_resolution_rate}%`]].map(item => `<div><span>${esc(item[0])}</span><strong>${esc(item[1])}</strong></div>`).join('')}</div></div></section>
+    <section class="section"><div class="section-title"><h2>Recent governance decisions</h2><span>Reviewer justifications remain attributable</span></div><div class="panel table-wrap">${decisions.length ? `<table><thead><tr><th>Review ID</th><th>Stage</th><th>Risk</th><th>Status</th><th>Reviewer</th><th>Created</th></tr></thead><tbody>${decisions.map(item => `<tr><td>${esc(item.review_id)}</td><td>${esc(item.stage)}</td><td>${esc(item.risk_level)}</td><td>${badge(item.status)}</td><td>${esc(item.reviewer_id)}</td><td>${esc(new Date(item.created_at).toLocaleString())}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No governance review records are available.</div>'}</div></section>`;
 }
 
 function render() {
   if (!state.data) return;
-  const pages = { overview: overviewPage, demo: demoPage, evaluations: evaluationsPage, logs: logsPage };
+  const pages = { overview: overviewPage, demo: demoPage, evaluations: evaluationsPage, governance: governancePage, logs: logsPage };
   app.innerHTML = shell(pages[state.page]());
   bind();
 }
@@ -129,7 +140,7 @@ async function runDemo(event) {
     if (!response.ok) throw new Error(payload.error || 'The security test could not run.');
     state.result = payload.result;
     const bootstrap = await fetch('/api/bootstrap').then(item => item.json());
-    state.data.audit_events = bootstrap.audit_events; state.data.security_evaluation = bootstrap.security_evaluation;
+    state.data.audit_events = bootstrap.audit_events; state.data.security_evaluation = bootstrap.security_evaluation; state.data.governance = bootstrap.governance;
   } catch (error) { state.error = error.message; }
   finally { state.running = false; render(); }
 }

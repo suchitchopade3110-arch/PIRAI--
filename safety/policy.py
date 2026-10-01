@@ -29,6 +29,7 @@ def evaluate_scores(scores: Dict[str, float]) -> Dict[str, Any]:
                 "category": category,
                 "score": round(score, 4),
                 "reason": "ZERO_TOLERANCE",
+                "risk_level": "CRITICAL",
             }
 
     # -------------------------
@@ -45,6 +46,7 @@ def evaluate_scores(scores: Dict[str, float]) -> Dict[str, Any]:
             "decision": "ALLOW",
             "category": None,
             "score": 0.0,
+            "risk_level": "LOW",
         }
 
     category, score = max(
@@ -63,4 +65,5 @@ def evaluate_scores(scores: Dict[str, float]) -> Dict[str, Any]:
         "decision": decision,
         "category": category,
         "score": round(score, 4),
+        "risk_level": {"ALLOW": "LOW", "REVIEW": "MEDIUM", "BLOCK": "HIGH"}[decision],
     }

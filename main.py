@@ -85,6 +85,8 @@ def handle_interactive_session():
                 print(f"Category: {reason.get('category', 'N/A')}")
                 print(f"Score   : {reason.get('score', 'N/A')}")
             print("\n⚠️ Request flagged for HUMAN REVIEW.")
+            print("Review ID:", result.get("review_id", "Unavailable"))
+            print("Governance status:", result.get("governance_status", "PENDING"))
 
         # -------------------------
         # ALLOWED
@@ -101,6 +103,11 @@ def handle_interactive_session():
         else:
             print("Stage :", result.get("stage", "UNKNOWN"))
             print("Reason:", result.get("reason", "Processing error"))
+
+        if result.get("policy_version"):
+            print("Policy:", result["policy_version"])
+        if result.get("event_id"):
+            print("Audit event:", result["event_id"])
 
         print("\n" + "=" * 60 + "\n")
 

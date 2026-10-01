@@ -1,0 +1,62 @@
+{
+  "active_policy": {
+    "activated_at": "2026-10-01T00:00:00+00:00",
+    "block_threshold": 0.7,
+    "coding_model": "Qwen/Qwen2.5-Coder-1.5B-Instruct",
+    "created_at": "2026-10-01T00:00:00+00:00",
+    "policy_version": "PIRAI-POLICY-1.0.0",
+    "review_threshold": 0.4,
+    "safety_classifier": "KoalaAI/Text-Moderation",
+    "tool_policy_version": "PIRAI-TOOLS-1.0.0",
+    "zero_tolerance_categories": [
+      "S3"
+    ],
+    "zero_tolerance_threshold": 0.3
+  },
+  "data_quality": {
+    "note": "Insufficient review data exists to calculate reviewer performance metrics.",
+    "resolution_time_available": false,
+    "review_metrics_available": false
+  },
+  "generated_at": "2026-10-01T09:02:53.836928+05:30",
+  "summary": {
+    "approved_reviews": 0,
+    "average_review_resolution_seconds": null,
+    "decision_counts": {
+      "ALLOW": 45,
+      "BLOCK": 32,
+      "IGNORE": 1,
+      "REACHED": 27,
+      "REDACT": 0,
+      "REVIEW": 11
+    },
+    "decisions_by_policy_version": {
+      "LEGACY_UNVERSIONED": 116
+    },
+    "decisions_by_risk_category": {
+      "DATA_EXFILTRATION": 1,
+      "DEMO_REVIEW_FIXTURE": 3,
+      "DIRECT_PROMPT_INJECTION": 9,
+      "H": 56,
+      "INDIRECT_PROMPT_INJECTION": 1,
+      "JAILBREAK": 17,
+      "MULTI_TURN_JAILBREAK": 1,
+      "OBFUSCATED_JAILBREAK": 1,
+      "PRIVILEGE_ESCALATION": 1,
+      "PROMPT_INJECTION": 9,
+      "ROLE_HIJACKING": 1,
+      "S3": 2,
+      "SAFE": 4,
+      "SAFETY_BYPASS": 5,
+      "SYSTEM_PROMPT_EXTRACTION": 4,
+      "TOOL_ABUSE": 1
+    },
+    "human_reviewed_cases": 0,
+    "override_count": 0,
+    "pending_reviews": 0,
+    "rejected_reviews": 0,
+    "reviewer_resolution_rate": null,
+    "tool_authorization_denials": 1,
+    "total_security_decisions": 116
+  }
+}

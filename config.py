@@ -5,6 +5,8 @@ from pathlib import Path
 # ============================================================
 SAFETY_MODEL = "KoalaAI/Text-Moderation"
 CODER_MODEL = "Qwen/Qwen2.5-Coder-1.5B-Instruct"
+ACTIVE_POLICY_VERSION = "PIRAI-POLICY-1.0.0"
+TOOL_POLICY_VERSION = "PIRAI-TOOLS-1.0.0"
 
 # ============================================================
 # Safety Decision Thresholds
@@ -23,6 +25,9 @@ BASE_DIR = Path(__file__).resolve().parent
 RESULTS_DIR = BASE_DIR / "results"
 AUDIT_LOG_PATH = RESULTS_DIR / "safety_audit.jsonl"
 ACCEPTANCE_REPORT_PATH = RESULTS_DIR / "acceptance_report.txt"
+GOVERNANCE_REVIEWS_PATH = RESULTS_DIR / "governance_reviews.jsonl"
+GOVERNANCE_OVERRIDES_PATH = RESULTS_DIR / "governance_overrides.jsonl"
+GOVERNANCE_REPORT_PATH = RESULTS_DIR / "governance_report.json"
 
 # ============================================================
 # Benchmark & Evaluation URLs / Dataset Config

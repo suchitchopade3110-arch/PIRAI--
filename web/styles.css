@@ -106,7 +106,7 @@ textarea { min-height: 58px; max-height: 120px; padding: 10px 11px; resize: vert
 .stage-name { font-size: 12px; font-weight: 650; white-space: nowrap; }
 .stage-status { margin-top: 3px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
 
-.summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
 .summary-block { padding: 16px; }
 .summary-block span { color: var(--muted); font-size: 12px; }
 .summary-block strong { display: block; margin-top: 8px; font-size: 14px; }

@@ -84,7 +84,7 @@ The extended prompt-injection threat model, instruction hierarchy, tool policy, 
 | :--- | :--- |
 | **Toxic, Hateful, Violent, Obscene / CSAM Content** | ✅ Completed |
 | **Explainability / Interpretability Gaps** | ✅ Completed |
-| **Accountability, Transparency & Governance** | 🟡 Partially Completed |
+| **Accountability, Transparency & Governance** | ✅ Completed |
 | **Environmental & Energy Impact** | ⏳ Planned |
 | **Multi-Agent Systemic / Societal Risk** | ⏳ Planned |
 
@@ -152,6 +152,12 @@ The explainability layer does **not** expose:
 - Exact internal regex signatures
 - Raw sensitive model outputs
 
+## 🏛️ Accountability, Transparency & Governance
+
+PIRAI binds security decisions to the active `PIRAI-POLICY-1.0.0` policy snapshot and unique `EVT-*` audit IDs. `REVIEW` decisions stop execution and enter a persistent `REV-*` queue; authorized reviewers must provide an identity, an explicit approval or rejection, and a justification. Resolutions are append-only and immutable. Exceptional overrides are stored separately as `OVR-*` records, preserving the original automated outcome.
+
+The dashboard and local API expose active policy provenance, pending and resolved reviews, override history, and metrics derived from actual journals. `results/governance_report.json` states when review data is insufficient. See [GOVERNANCE.md](GOVERNANCE.md) for responsibility boundaries, lifecycle rules, privacy limits, and operational limitations.
+
 ---
 
 ## 📁 Project Structure
@@ -164,6 +170,7 @@ ai-safety-agent/
 ├── web_server.py               # Local security dashboard
 ├── requirements.txt
 ├── SECURITY.md
+├── GOVERNANCE.md
 ├── DEMO.md
 │
 ├── safety/
@@ -183,6 +190,14 @@ ai-safety-agent/
 │   ├── __init__.py
 │   └── qwen_agent.py           # End-to-end protected coding-agent pipeline
 │
+├── governance/
+│   ├── models.py               # Typed policy, review, override, and summary records
+│   ├── policy_registry.py      # Active versioned policy and model provenance
+│   ├── review_manager.py       # Append-only human-review lifecycle
+│   ├── override_manager.py     # Separate immutable override history
+│   ├── governance_report.py    # Metrics derived from persisted evidence
+│   └── storage.py              # Durable JSONL primitives
+│
 ├── evaluation/
 │   ├── __init__.py
 │   ├── jailbreakbench_eval.py
@@ -196,11 +211,15 @@ ai-safety-agent/
 │   └── runner.py
 │
 ├── tests/
-│   └── test_explainability.py
+│   ├── test_explainability.py
+│   └── test_governance.py
 │
 ├── results/
 │   ├── .gitkeep
 │   ├── safety_audit.jsonl
+│   ├── governance_reviews.jsonl
+│   ├── governance_overrides.jsonl
+│   ├── governance_report.json
 │   └── acceptance_report.txt
 │
 └── README.md
@@ -459,11 +478,16 @@ The system passes acceptance if all four criteria are met:
 - Explainability / Interpretability mitigation
 - Structured security explanations
 - Human-readable security traces
+- Versioned policy and configuration provenance
+- Unique auditable security event IDs
+- Persistent human-review queue and immutable approval/rejection history
+- Mandatory reviewer identity and justification
+- Separate, attributable override history
+- Governance API, dashboard, and evidence-derived reporting
 
 ### Next
 
 - Groq-hosted Qwen Coder integration
-- Accountability / governance improvements
 - Environmental & energy impact monitoring
 - Multi-agent systemic / societal risk controls
 
@@ -475,6 +499,6 @@ The system passes acceptance if all four criteria are met:
 2. **Classifier Domain Specificity**: `KoalaAI/Text-Moderation` is primarily designed for natural-language harmful-content detection and should ideally be paired with code-specific static analysis.
 3. **Inference Latency**: Input and output moderation add additional model passes.
 4. **Explainability Boundary**: PIRAI explains observable security decisions, not hidden model reasoning or chain-of-thought.
-5. **Governance Coverage**: Audit logging is implemented, but complete reviewer workflows, policy versioning, override history, and approval management remain future work.
+5. **Governance Deployment**: The local review API does not provide production authentication or distributed storage; deployments must add trusted access control and retention operations without weakening the review boundary.
 6. **Environmental Monitoring**: Energy, carbon, and inference-efficiency tracking are not yet implemented.
 7. **Multi-Agent Risk**: Systemic risk across multiple collaborating agents is not yet implemented.

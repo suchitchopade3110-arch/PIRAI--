@@ -15,6 +15,10 @@ from safety.output_security import scan_output
 from safety.taxonomy import SecuritySource
 from safety.tool_policy import authorize_tool_request
 from safety.explainability import attach_explanation
+from safety.audit import new_event_id
+from governance.policy_registry import get_active_policy
+from governance.review_manager import ReviewManager
+from governance.storage import GovernancePersistenceError
 
 _coder_tokenizer = None
 _coder_model = None
@@ -115,6 +119,7 @@ def safe_coding_agent(
     tool_request: Optional[Mapping[str, Any]] = None,
     trusted_permissions: Optional[Set[str]] = None,
     tool_execute_fn: Optional[Callable[[Mapping[str, Any]], Any]] = None,
+    review_manager: Optional[ReviewManager] = None,
 ) -> Dict[str, Any]:
     """
     Protected Autonomous Coding Agent Pipeline:
@@ -124,15 +129,24 @@ def safe_coding_agent(
     safety_fn = safety_fn or safety_gate
     generate_fn = generate_fn or generate_with_qwen
     audit_fn = audit_fn or audit_log
+    review_manager = review_manager or ReviewManager()
+    policy = get_active_policy()
     trace = []
 
     if not prompt or not str(prompt).strip():
+        event_id = audit_fn(
+            stage="INPUT", decision="BLOCK", reason="Empty prompt provided",
+            prompt_id=prompt_id, mode="protected", model_invoked=False,
+            tool_invoked=False, source=SecuritySource.USER_INPUT.value, risk_level="LOW",
+        )
         return attach_explanation({
             "status": "BLOCKED",
             "stage": "INPUT",
             "reason": {"reason": "Empty prompt provided"},
             "model_invoked": False,
             "trace": [{"stage": "INPUT", "status": "FAIL"}],
+            "event_id": event_id or new_event_id(),
+            "policy_version": policy.policy_version,
         }, detected_by="SYSTEM_POLICY", policy_basis="Input validation policy",
            why="The request did not contain any input to process.",
            recommended_action="Provide a non-empty coding request and retry.")
@@ -141,7 +155,7 @@ def safe_coding_agent(
 
     if jailbreak["detected"]:
         trace.append({"stage": "JAILBREAK_DETECTION", "status": "FAIL"})
-        audit_fn(
+        event_id = audit_fn(
             stage="JAILBREAK",
             decision="BLOCK",
             category=jailbreak.get("category"),
@@ -160,6 +174,8 @@ def safe_coding_agent(
             "reason": jailbreak,
             "model_invoked": False,
             "trace": trace,
+            "event_id": event_id or new_event_id(),
+            "policy_version": policy.policy_version,
         }, detected_by="DETERMINISTIC_ATTACK_DETECTOR", finding=jailbreak,
            policy_basis="Prompt injection policy")
     trace.append({"stage": "JAILBREAK_DETECTION", "status": "PASS"})
@@ -196,7 +212,7 @@ def safe_coding_agent(
     })
     trace.append({"stage": "SAFETY_POLICY", "status": input_result["decision"]})
 
-    audit_fn(
+    event_id = audit_fn(
         stage="INPUT",
         decision=input_result["decision"],
         category=input_result.get("category"),
@@ -217,23 +233,50 @@ def safe_coding_agent(
             "reason": input_result,
             "model_invoked": False,
             "trace": trace,
+            "event_id": event_id or new_event_id(),
+            "policy_version": policy.policy_version,
         }, detected_by="INPUT_MODERATION_CLASSIFIER", finding=input_result,
            policy_basis="Safety score threshold policy", source=SecuritySource.USER_INPUT.value)
 
     if input_result["decision"] == "REVIEW":
+        try:
+            review = review_manager.create_review(
+                prompt_id=prompt_id,
+                audit_event_id=event_id or new_event_id(),
+                stage="INPUT",
+                risk_category=input_result.get("category"),
+                risk_level=input_result.get("risk_level", "MEDIUM"),
+                score=input_result.get("score"),
+                policy_version=policy.policy_version,
+            )
+        except (GovernancePersistenceError, OSError, ValueError) as exc:
+            return attach_explanation({
+                "status": "ERROR", "stage": "GOVERNANCE_REVIEW",
+                "reason": {"reason": "Review state could not be persisted"},
+                "model_invoked": False, "tool_invoked": False, "trace": trace,
+                "event_id": event_id or new_event_id(),
+                "policy_version": policy.policy_version,
+                "governance_status": "PERSISTENCE_FAILED",
+            }, detected_by="GOVERNANCE_POLICY", policy_basis="Fail-closed review persistence policy",
+               why="The required review state could not be recorded, so processing stopped.",
+               recommended_action="Contact an operator and retry after governance storage is restored.")
         return attach_explanation({
             "status": "HUMAN_REVIEW",
             "stage": "INPUT",
             "reason": input_result,
             "model_invoked": False,
             "trace": trace,
+            "event_id": event_id or review.audit_event_id,
+            "review_id": review.review_id,
+            "policy_version": policy.policy_version,
+            "governance_status": review.status,
         }, detected_by="HUMAN_REVIEW_POLICY", finding=input_result,
            policy_basis="Safety score threshold policy", source=SecuritySource.USER_INPUT.value)
 
     tool_result = authorize_tool_request(tool_request, trusted_permissions)
     if tool_request:
         trace.append({"stage": "TOOL_POLICY", "status": tool_result["decision"]})
-        audit_fn(
+        tool_event_id = audit_fn(
             stage="TOOL_POLICY",
             decision=tool_result["decision"],
             category=tool_result.get("category"),
@@ -254,6 +297,8 @@ def safe_coding_agent(
                 "tool_invoked": False,
                 "context_ignored": context_ignored,
                 "trace": trace,
+                "event_id": tool_event_id or new_event_id(),
+                "policy_version": policy.policy_version,
             }, detected_by="TOOL_AUTHORIZATION_POLICY", finding=tool_result,
                policy_basis="Trusted tool authorization policy")
         if tool_execute_fn:
@@ -268,6 +313,11 @@ def safe_coding_agent(
         response = generate_fn(prompt)
     except Exception as e:
         trace[-1]["status"] = "ERROR"
+        generation_event_id = audit_fn(
+            stage="GENERATION", decision="ERROR", reason="Model generation failed",
+            prompt_id=prompt_id, mode="protected", model_invoked=True,
+            tool_invoked=tool_result.get("tool_invoked", False), risk_level="MEDIUM",
+        )
         return attach_explanation({
             "status": "ERROR",
             "stage": "GENERATION",
@@ -275,6 +325,8 @@ def safe_coding_agent(
             "model_invoked": True,
             "tool_invoked": tool_result.get("tool_invoked", False),
             "trace": trace,
+            "event_id": generation_event_id or new_event_id(),
+            "policy_version": policy.policy_version,
         }, detected_by="SYSTEM_POLICY", policy_basis="Model execution policy")
 
     # =========================
@@ -286,7 +338,7 @@ def safe_coding_agent(
         "status": "PASS" if output_result["decision"] == "ALLOW" else output_result["decision"],
     })
 
-    audit_fn(
+    output_event_id = audit_fn(
         stage="OUTPUT",
         decision=output_result["decision"],
         category=output_result.get("category"),
@@ -296,6 +348,8 @@ def safe_coding_agent(
         model_invoked=True,
         tool_invoked=tool_result.get("tool_invoked", False),
         source=SecuritySource.MODEL_OUTPUT.value,
+        risk_level=output_result.get("risk_level"),
+        confidence=output_result.get("score"),
     )
 
     if output_result["decision"] == "BLOCK":
@@ -306,10 +360,30 @@ def safe_coding_agent(
             "model_invoked": True,
             "tool_invoked": tool_result.get("tool_invoked", False),
             "trace": trace,
+            "event_id": output_event_id or new_event_id(),
+            "policy_version": policy.policy_version,
         }, detected_by="OUTPUT_MODERATION_CLASSIFIER", finding=output_result,
            policy_basis="Safety score threshold policy", source=SecuritySource.MODEL_OUTPUT.value)
 
     if output_result["decision"] == "REVIEW":
+        try:
+            review = review_manager.create_review(
+                prompt_id=prompt_id,
+                audit_event_id=output_event_id or new_event_id(), stage="OUTPUT",
+                risk_category=output_result.get("category"),
+                risk_level=output_result.get("risk_level", "MEDIUM"),
+                score=output_result.get("score"), policy_version=policy.policy_version,
+            )
+        except (GovernancePersistenceError, OSError, ValueError):
+            return attach_explanation({
+                "status": "ERROR", "stage": "GOVERNANCE_REVIEW",
+                "reason": {"reason": "Review state could not be persisted"},
+                "model_invoked": True, "tool_invoked": tool_result.get("tool_invoked", False),
+                "trace": trace, "event_id": output_event_id or new_event_id(),
+                "policy_version": policy.policy_version, "governance_status": "PERSISTENCE_FAILED",
+            }, detected_by="GOVERNANCE_POLICY", policy_basis="Fail-closed review persistence policy",
+               why="The required output review state could not be recorded, so no output was released.",
+               recommended_action="Contact an operator and retry after governance storage is restored.")
         return attach_explanation({
             "status": "HUMAN_REVIEW",
             "stage": "OUTPUT",
@@ -317,13 +391,17 @@ def safe_coding_agent(
             "model_invoked": True,
             "tool_invoked": tool_result.get("tool_invoked", False),
             "trace": trace,
+            "event_id": output_event_id or review.audit_event_id,
+            "review_id": review.review_id,
+            "policy_version": policy.policy_version,
+            "governance_status": review.status,
         }, detected_by="HUMAN_REVIEW_POLICY", finding=output_result,
            policy_basis="Safety score threshold policy", source=SecuritySource.MODEL_OUTPUT.value)
 
     secret_result = scan_output(response)
     trace.append({"stage": "SENSITIVE_DATA_SCAN", "status": secret_result["decision"]})
     if secret_result["decision"] in {"BLOCK", "REDACT"}:
-        audit_fn(
+        security_event_id = audit_fn(
             stage="OUTPUT_SECURITY",
             decision=secret_result["decision"],
             category=secret_result["category"],
@@ -344,6 +422,8 @@ def safe_coding_agent(
             "tool_invoked": tool_result.get("tool_invoked", False),
             "context_ignored": context_ignored,
             "trace": trace,
+            "event_id": security_event_id or new_event_id(),
+            "policy_version": policy.policy_version,
         }, detected_by="OUTPUT_SECURITY_SCANNER", finding=secret_result,
            policy_basis="Sensitive-output policy")
 
@@ -357,6 +437,9 @@ def safe_coding_agent(
         "tool_invoked": tool_result.get("tool_invoked", False),
         "context_ignored": context_ignored,
         "trace": trace,
+        "event_id": output_event_id or new_event_id(),
+        "policy_version": policy.policy_version,
+        "governance_status": "NOT_REQUIRED",
     }
     if context_ignored:
         return attach_explanation(
